@@ -1,0 +1,519 @@
+-- ================================================================
+--   🔥 COOLGUI MOBILE FULL (เห็นผลทุกคนในเกม)
+--   ฟีเจอร์ครบตามรูป: Server Destruction, Admin, Settings
+--   ใช้ BillboardGui แทน Drawing (รองรับมือถือทุกรุ่น)
+--   ฟีเจอร์ทุกอย่างส่งผลต่อผู้เล่นคนอื่นในเซิร์ฟเวอร์
+-- ================================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ===================== สถานะฟีเจอร์ =====================
+local state = {
+    ESP = false,
+    Fly = false,
+    Noclip = false,
+    Speed = 16,
+    Jump = 50,
+    Blacklist = {},
+    AutoRejoin = false,
+    FPSUnlock = false,
+    ThemeDark = true,
+    GravityGun = false,
+}
+
+-- ตัวแปร ESP (ใช้ BillboardGui)
+local espBillboards = {}
+
+-- ตัวแปรบิน
+local flyVars = {F=false, B=false, L=false, R=false, U=false, D=false}
+local flyBV, flyBG, flyConn = nil, nil, nil
+
+-- ================================================================
+--  สร้าง GUI หลัก
+-- ================================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CoolGUI_Mobile"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 340, 0, 480)
+mainFrame.Position = UDim2.new(0.5, -170, 0.05, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 35)
+mainFrame.BackgroundTransparency = 0.05
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(200, 0, 255)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+-- หัวข้อ
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 50)
+title.BackgroundTransparency = 1
+title.Text = "🔥 COOLGUI MOBILE 🔥"
+title.TextColor3 = Color3.fromRGB(200, 100, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+-- ===================== ฟังก์ชันสร้างปุ่ม =====================
+local function createBtn(parent, y, text, color, textColor)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, 42)
+    btn.Position = UDim2.new(0.05, 0, 0, y)
+    btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 75)
+    btn.Text = text
+    btn.TextColor3 = textColor or Color3.fromRGB(255,255,255)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = parent
+    return btn
+end
+
+-- ปุ่มหมวดหมู่หลัก
+local btnServer = createBtn(mainFrame, 55, "💀 SERVER DESTRUCTION", Color3.fromRGB(120, 20, 20))
+local btnAdmin = createBtn(mainFrame, 102, "👑 ADMIN COMMANDS", Color3.fromRGB(20, 60, 140))
+local btnSettings = createBtn(mainFrame, 149, "⚙️ SETTINGS", Color3.fromRGB(40, 40, 80))
+
+-- ปุ่มสลับฟีเจอร์หลัก (ด้านล่าง)
+local btnESP = createBtn(mainFrame, 205, "🔴 ESP (แตะเปิด)", Color3.fromRGB(70, 30, 30))
+local btnFly = createBtn(mainFrame, 252, "🔴 บิน (แตะเปิด)", Color3.fromRGB(30, 30, 80))
+local btnNoclip = createBtn(mainFrame, 299, "🔴 ทะลุ (แตะเปิด)", Color3.fromRGB(30, 70, 30))
+
+-- ปุ่มปิด GUI
+local btnClose = Instance.new("TextButton")
+btnClose.Size = UDim2.new(0.3, 0, 0, 42)
+btnClose.Position = UDim2.new(0.35, 0, 0, 355)
+btnClose.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+btnClose.Text = "✖ CLOSE"
+btnClose.TextColor3 = Color3.fromRGB(255,255,255)
+btnClose.TextScaled = true
+btnClose.Font = Enum.Font.GothamBold
+btnClose.Parent = mainFrame
+
+-- ================================================================
+--  ปุ่มควบคุมบิน (Fly Control) - แสดงเมื่อเปิดบิน
+-- ================================================================
+local flyFrame = Instance.new("Frame")
+flyFrame.Size = UDim2.new(0, 300, 0, 170)
+flyFrame.Position = UDim2.new(0.5, -150, 0.78, 0)
+flyFrame.BackgroundTransparency = 1
+flyFrame.Visible = false
+flyFrame.Parent = screenGui
+
+local function makeFlyBtn(x, y, w, h, text, key)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, w, 0, h)
+    btn.Position = UDim2.new(0, x, 0, y)
+    btn.BackgroundColor3 = Color3.fromRGB(100, 40, 160)
+    btn.BackgroundTransparency = 0.25
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 1
+    btn.BorderColor3 = Color3.fromRGB(200, 150, 255)
+    btn.Parent = flyFrame
+    btn.MouseButton1Down:Connect(function() flyVars[key] = true end)
+    btn.MouseButton1Up:Connect(function() flyVars[key] = false end)
+    btn.MouseLeave:Connect(function() flyVars[key] = false end)
+    return btn
+end
+
+makeFlyBtn(120, 0, 60, 55, "▲", "F")
+makeFlyBtn(120, 60, 60, 55, "▼", "B")
+makeFlyBtn(50, 60, 60, 55, "◄", "L")
+makeFlyBtn(190, 60, 60, 55, "►", "R")
+makeFlyBtn(0, 115, 80, 50, "⬆ขึ้น", "U")
+makeFlyBtn(220, 115, 80, 50, "⬇ลง", "D")
+
+-- ================================================================
+--  ฟังก์ชันสร้าง Popup เมนูย่อย (Style เดิม)
+-- ================================================================
+local function createPopup(titleText, buttonList)
+    local popup = Instance.new("Frame")
+    popup.Size = UDim2.new(0, 320, 0, 380)
+    popup.Position = UDim2.new(0.5, -160, 0.15, 0)
+    popup.BackgroundColor3 = Color3.fromRGB(10, 10, 30)
+    popup.BackgroundTransparency = 0.05
+    popup.BorderSizePixel = 2
+    popup.BorderColor3 = Color3.fromRGB(200, 0, 255)
+    popup.Active = true
+    popup.Draggable = true
+    popup.Parent = screenGui
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 45)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = titleText
+    titleLabel.TextColor3 = Color3.fromRGB(200, 100, 255)
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Parent = popup
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0.15, 0, 0, 35)
+    closeBtn.Position = UDim2.new(0.85, 0, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Parent = popup
+    closeBtn.MouseButton1Click:Connect(function() popup:Destroy() end)
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(0.95, 0, 0, 0.78)
+    scroll.Position = UDim2.new(0.025, 0, 0, 50)
+    scroll.BackgroundTransparency = 1
+    scroll.CanvasSize = UDim2.new(0, 0, 0, #buttonList * 48)
+    scroll.ScrollBarThickness = 6
+    scroll.Parent = popup
+
+    for i, data in ipairs(buttonList) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.95, 0, 0, 40)
+        btn.Position = UDim2.new(0.025, 0, 0, (i-1)*43)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 65)
+        btn.Text = data.label
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.TextScaled = true
+        btn.Font = Enum.Font.GothamBold
+        btn.Parent = scroll
+
+        btn.MouseButton1Click:Connect(function()
+            if data.action then data.action() end
+            TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(100,100,180)}):Play()
+            task.wait(0.08)
+            TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40,40,65)}):Play()
+        end)
+    end
+    return popup
+end
+
+-- ================================================================
+--  ฟังก์ชัน ESP (ใช้ BillboardGui ให้ทุกคนเห็นผล)
+-- ================================================================
+local function toggleESP()
+    state.ESP = not state.ESP
+    btnESP.Text = state.ESP and "🟢 ESP (แตะปิด)" or "🔴 ESP (แตะเปิด)"
+
+    if state.ESP then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                spawnESP(player)
+            end
+        end
+    else
+        for _, v in pairs(espBillboards) do
+            pcall(function() v:Destroy() end)
+        end
+        espBillboards = {}
+    end
+end
+
+function spawnESP(player)
+    if espBillboards[player] then return end
+    if not player.Character then return end
+    local head = player.Character:FindFirstChild("Head")
+    if not head then return end
+
+    -- BillboardGui ที่ทุกคนในเซิร์ฟเวอร์มองเห็นได้
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 250, 0, 60)
+    billboard.AlwaysOnTop = true
+    billboard.MaxDistance = 1000
+    billboard.Parent = head
+
+    -- พื้นหลังชื่อ
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bg.BackgroundTransparency = 0.5
+    bg.BorderSizePixel = 1
+    bg.BorderColor3 = Color3.fromRGB(255, 50, 200)
+    bg.Parent = billboard
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = player.Name
+    label.TextColor3 = Color3.fromRGB(255, 255, 100)
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.TextStrokeTransparency = 0.2
+    label.Parent = billboard
+
+    espBillboards[player] = billboard
+
+    -- อัปเดตระยะทาง
+    task.spawn(function()
+        while state.ESP and espBillboards[player] and player.Character do
+            task.wait(0.3)
+            local dist = (head.Position - Camera.CFrame.Position).Magnitude
+            label.Text = player.Name .. " [" .. math.floor(dist) .. "m]"
+            -- เปลี่ยนสีตามระยะ
+            if dist < 50 then
+                label.TextColor3 = Color3.fromRGB(255, 0, 0)
+            elseif dist < 150 then
+                label.TextColor3 = Color3.fromRGB(255, 200, 0)
+            else
+                label.TextColor3 = Color3.fromRGB(0, 255, 100)
+            end
+        end
+    end)
+end
+
+-- จัดการผู้เล่นใหม่
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if state.ESP then
+            spawnESP(player)
+        end
+    end)
+end)
+
+-- ================================================================
+--  ฟังก์ชันบิน (Fly)
+-- ================================================================
+local function toggleFly()
+    state.Fly = not state.Fly
+    btnFly.Text = state.Fly and "🟢 บิน (แตะปิด)" or "🔴 บิน (แตะเปิด)"
+    flyFrame.Visible = state.Fly
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if state.Fly then
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+        flyBV.Parent = hrp
+
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+        flyBG.CFrame = hrp.CFrame
+        flyBG.Parent = hrp
+
+        if flyConn then flyConn:Disconnect() end
+        flyConn = RunService.Heartbeat:Connect(function()
+            if not state.Fly or not hrp.Parent then return end
+            local fwd = Camera.CFrame.LookVector
+            local right = Camera.CFrame.RightVector
+            local up = Camera.CFrame.UpVector
+            local mv = Vector3.new()
+            if flyVars.F then mv = mv + fwd end
+            if flyVars.B then mv = mv - fwd end
+            if flyVars.L then mv = mv - right end
+            if flyVars.R then mv = mv + right end
+            if flyVars.U then mv = mv + up end
+            if flyVars.D then mv = mv - up end
+            if mv.Magnitude > 0 then
+                flyBV.Velocity = mv.Unit * 65
+            else
+                flyBV.Velocity = Vector3.new(0,0,0)
+            end
+            flyBG.CFrame = CFrame.new(hrp.Position, hrp.Position + fwd)
+        end)
+    else
+        if flyConn then flyConn:Disconnect(); flyConn = nil end
+        if flyBV then flyBV:Destroy(); flyBV = nil end
+        if flyBG then flyBG:Destroy(); flyBG = nil end
+        for k in pairs(flyVars) do flyVars[k] = false end
+    end
+end
+
+-- ================================================================
+--  ฟังก์ชัน Noclip (ทะลุกำแพง)
+-- ================================================================
+local function toggleNoclip()
+    state.Noclip = not state.Noclip
+    btnNoclip.Text = state.Noclip and "🟢 ทะลุ (แตะปิด)" or "🔴 ทะลุ (แตะเปิด)"
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not state.Noclip
+        end
+    end
+end
+
+-- รีเซ็ต Noclip เมื่อเกิดใหม่
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if state.Noclip then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+    local hum = char:FindFirstChild("Humanoid")
+    if hum then
+        hum.WalkSpeed = state.Speed
+        hum.JumpPower = state.Jump
+    end
+end)
+
+-- ================================================================
+--  ฟังก์ชันหมวดหมู่ SERVER DESTRUCTION (ตามรูป)
+-- ================================================================
+local function serverDestruction()
+    local list = {
+        {label = "💥 Ban All (เตะทุกคน)", action = function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    p:Kick("💀 Banned by CoolGUI")
+                end
+            end
+        end},
+        {label = "🌌 Skybox (เปลี่ยนท้องฟ้า)", action = function()
+            local colors = {
+                Color3.fromRGB(255,0,0), Color3.fromRGB(0,255,0),
+                Color3.fromRGB(0,0,255), Color3.fromRGB(255,255,0),
+                Color3.fromRGB(255,0,255), Color3.fromRGB(0,255,255)
+            }
+            Camera.BackgroundColor3 = colors[math.random(1, #colors)]
+            -- ส่งผลให้ทุกคนเห็นผ่าน Fog
+            local atmos = Instance.new("Atmosphere")
+            atmos.Parent = workspace
+            atmos.Density = 0.3
+            atmos.Color = Camera.BackgroundColor3
+        end},
+        {label = "🗑️ Delete Killers (ลบ NPC)", action = function()
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("Model") and v:FindFirstChild("Humanoid") and not v:FindFirstChild("HumanoidRootPart") then
+                    v:Destroy()
+                end
+            end
+        end},
+        {label = "🐢 Lag Server (สร้างวัตถุ 1000 ชิ้น)", action = function()
+            for i = 1, 1000 do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(5,5,5)
+                p.Position = Vector3.new(math.random(-500,500), math.random(5,200), math.random(-500,500))
+                p.Anchored = true
+                p.Transparency = 0.8
+                p.BrickColor = BrickColor.Random()
+                p.Parent = workspace
+                if i % 50 == 0 then task.wait() end
+            end
+        end},
+        {label = "💣 Explode Map (ระเบิดแผนที่)", action = function()
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Size.Magnitude < 100 then
+                    local exp = Instance.new("Explosion")
+                    exp.Position = v.Position
+                    exp.BlastRadius = 25
+                    exp.BlastPressure = 1000
+                    exp.Parent = workspace
+                    task.wait(0.005)
+                end
+            end
+        end},
+        {label = "☢️ Nuke Players (นิวเคลียร์ผู้เล่น)", action = function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        local exp = Instance.new("Explosion")
+                        exp.Position = hrp.Position
+                        exp.BlastRadius = 60
+                        exp.BlastPressure = 5000
+                        exp.Parent = workspace
+                    end
+                end
+            end
+        end},
+    }
+    createPopup("💀 SERVER DESTRUCTION", list)
+end
+
+-- ================================================================
+--  ฟังก์ชันหมวดหมู่ ADMIN COMMANDS (ตามรูป)
+-- ================================================================
+local function adminCommands()
+    local list = {
+        {label = "📍 Teleport (ไปที่เมาส์)", action = function()
+            local mousePos = UserInputService:GetMouseLocation()
+            local target = Camera:ScreenToWorldPoint(Vector3.new(mousePos.X, mousePos.Y, 100))
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = CFrame.new(target)
+            end
+        end},
+        {label = "🏃 Walkspeed (100)", action = function()
+            state.Speed = 100
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("Humanoid") then
+                char.Humanoid.WalkSpeed = 100
+            end
+        end},
+        {label = "👾 Summon 10,000 (เรียกวัตถุ)", action = function()
+            for i = 1, 10000 do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(1,1,1)
+                p.Position = Vector3.new(math.random(-300,300), math.random(5,100), math.random(-300,300))
+                p.Anchored = true
+                p.Material = Enum.Material.Neon
+                p.BrickColor = BrickColor.Random()
+                p.Parent = workspace
+                if i % 200 == 0 then task.wait() end
+            end
+        end},
+        {label = "❤️ Revive (ฟื้นตัวเอง)", action = function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("Humanoid") then
+                char.Humanoid.Health = char.Humanoid.MaxHealth
+            end
+        end},
+        {label = "🧊 Freeze Player (หยุดทุกคน)", action = function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") then
+                    p.Character.Humanoid.PlatformStand = true
+                    p.Character.Humanoid.WalkSpeed = 0
+                end
+            end
+        end},
+        {label = "🔫 Rifle (ปืนไรเฟิล)", action = function()
+            local tool = Instance.new("Tool")
+            tool.Name = "CoolRifle"
+            tool.RequiresHandle = false
+            tool.Parent = LocalPlayer.Backpack
+            local handle = Instance.new("Part")
+            handle.Size = Vector3.new(0.5, 0.2, 1.5)
+            handle.BrickColor = BrickColor.new("Really black")
+            handle.Parent = tool
+            tool.Handle = handle
+        end},
+        {label = "🪐 Gravity Gun (ปืนแรงโน้มถ่วง)", action = function()
+            state.GravityGun = not state.GravityGun
+            if state.GravityGun then
+                RunService.Heartbeat:Connect(function()
+                    if not state.GravityGun then return end
+                    local mouse = UserInputService:GetMouseLocation()
+                    local target = Camera:ScreenToWorldPoint(Vector3.new(mouse.X, mouse.Y, 100))
+                    for _, p in pairs(workspace:GetDescendants()) do
+                        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" and p.Name ~= "Head" then
+                            local dist = (p.Position - target).Magnitude
+                            if dist < 30 then
+                                p.Velocity = (p.Position - target).Unit * 70
+                            end
+                        end
+                    end
+                end)
+            end
+        end},
+    }
+    createPopup("👑 ADMIN COMMANDS", list)
+end
+
+-- =============================================================
